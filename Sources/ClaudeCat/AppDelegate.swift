@@ -103,9 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let frame = pet.panel.frame
         let visible = pet.panel.screen?.visibleFrame ?? .zero
-        let extras = [toolbar.isShown ? Toolbar.size : nil, composer.isOpen ? Composer.size : nil].compactMap { $0 }
-        let needed = extras.reduce(0) { $0 + $1.height + 4 }
-        let below = frame.minY - visible.minY >= needed + 4
+        let below = frame.minY - visible.minY >= Toolbar.size.height + Composer.size.height + 12
         var aboveY = frame.maxY + 2
         var belowY = frame.minY - 2
         func origin(for size: NSSize) -> NSPoint {
@@ -118,7 +116,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer { aboveY += size.height + 4 }
             return NSPoint(x: x, y: aboveY)
         }
-        if toolbar.isShown { toolbar.show(at: origin(for: Toolbar.size), parent: pet.panel) }
+        // The toolbar's slot is kept even while it is hidden, so hovering the pet never moves the cards.
+        let toolbarOrigin = origin(for: Toolbar.size)
+        if toolbar.isShown { toolbar.show(at: toolbarOrigin, parent: pet.panel) }
         if composer.isOpen { composer.place(at: origin(for: Composer.size)) }
 
         let items = hidden ? [] : boardCards.map { card in
