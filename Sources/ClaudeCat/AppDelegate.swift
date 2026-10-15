@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let listeners = ListenerRegistry()
     private let board = Board()
     private let desktop = DesktopSessionIndex()
+    private let live = LiveSessionPoller()
     private let preferences = Preferences()
     private var watcher: DirectoryWatcher?
 
@@ -49,11 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         composer.onClose = { [weak self] in self?.hoverChanged() }
         walker.onStep = { [weak self] in self?.layout() }
         walker.onChange = { [weak self] in self?.updatePet() }
+        live.onUpdate = { [weak self] in self?.reload() }
 
         store.createDirectory()
-        records = store.loadAll(now: now)
+        records = loadRecords()
         for r in records { seen[r.id] = r.stateKey }
         render()
+        live.start(every: 5)
 
         watcher = DirectoryWatcher(store.directory) { [weak self] in self?.reload() }
         // Cards expire, the pet falls asleep and strolls with time, not only with file changes.
@@ -70,8 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - State
 
+    /// Hook records reconciled with the CLI's live session list.
+    private func loadRecords() -> [SessionRecord] {
+        LiveSessions.merge(store.loadAll(now: now), live: live.sessions, takenAt: live.takenAt)
+    }
+
     private func reload() {
-        records = store.loadAll(now: now)
+        records = loadRecords()
         for r in records where seen[r.id] != r.stateKey {
             seen[r.id] = r.stateKey
             if r.state == .done { happyUntil = now + happyDuration }
