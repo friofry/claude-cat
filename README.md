@@ -45,12 +45,13 @@ The interface is in Russian; every string lives in `Sources/ClaudeCat/Strings.sw
 Requires macOS 13+ and Xcode or the Swift toolchain.
 
 ```bash
-./install.sh           # build, copy to ~/Applications, register hooks, launch
-./install.sh --login   # same, and start at login
-./uninstall.sh         # remove the app, LaunchAgent, hooks and state
+./run.sh --install           # build, copy to ~/Applications, register hooks, launch
+./run.sh --install --login   # same, and start at login
+./run.sh --uninstall         # remove the app, LaunchAgent, hooks and state
+./run.sh                     # build and launch from build/, for development
 ```
 
-`install.sh` backs up `~/.claude/settings.json` to `settings.json.bak-claude-cat` before adding the hooks,
+`--install` backs up `~/.claude/settings.json` to `settings.json.bak-claude-cat` before adding the hooks,
 and running it again replaces ClaudeCat's hooks instead of duplicating them. Claude Code picks up the
 hooks in running sessions too.
 
@@ -77,6 +78,12 @@ Claude Code ──hook JSON on stdin──▶ claude-cat-hook ──writes──
   hook that waits in the background and wakes the session by exiting with code 2. The listener quits as
   soon as the session moves on; if none is running, the reply is copied to the clipboard and the session
   opens instead.
+- **Live sessions**: every 5 seconds the app also runs `claude agents --json`, the CLI's own list of running
+  local sessions with their status. It adds sessions the hooks have not heard from (say, one that stopped at a
+  permission prompt before ClaudeCat was installed) and fixes records a missed event left stale (a turn
+  interrupted with Esc never sends `Stop`). Hook records written after the list was taken win.
+- **Cloud sessions** (Claude Projects, claude.ai/code) run on Anthropic's servers, where neither the hooks nor
+  the CLI's list can see them, so the pet does not show them.
 - **`ClaudeCat.app`** watches the directory, asks `Board` which sessions get cards and what the pet does
   (waiting > working > just finished > idle > asleep), and renders them.
 - **Opening a session**: Claude Desktop keeps a `local_<uuid>.json` per Code session with the CLI id in
@@ -87,7 +94,7 @@ Claude Code ──hook JSON on stdin──▶ claude-cat-hook ──writes──
 
 | Path | What |
 | --- | --- |
-| `Sources/ClaudeCatCore` | Foundation-only logic, fully unit-tested: session record and store, hook input and transitions, inbox, hook responses and the reply listener, transcript titles, `Board`, desktop session index, sprites |
+| `Sources/ClaudeCatCore` | Foundation-only logic, fully unit-tested: session record and store, hook input and transitions, inbox, hook responses and the reply listener, live session merge, transcript titles, `Board`, desktop session index, sprites |
 | `Sources/claude-cat-hook` | the hook executable, a few lines over the core |
 | `Sources/ClaudeCat` | the AppKit app: pet window and walker, cards, toolbar, composer, menu, strings, preferences |
 | `Tests/ClaudeCatCoreTests` | XCTest suite for the core |

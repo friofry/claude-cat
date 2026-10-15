@@ -40,7 +40,7 @@ enum Strings {
     static func wait(_ reason: WaitReason) -> String {
         switch reason {
         case .question(let text): return nonEmpty(text) ?? "Claude задаёт вопрос"
-        case .permission(let tool): return "Нужно разрешение: \(tool)"
+        case .permission(let tool): return tool.isEmpty ? "Нужно разрешение" : "Нужно разрешение: \(tool)"
         case .planApproval: return "План готов, нужно одобрение"
         case .notice(let text): return nonEmpty(text) ?? "Claude ждёт тебя"
         }

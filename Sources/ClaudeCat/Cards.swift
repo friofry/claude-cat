@@ -19,6 +19,8 @@ enum CardAction {
 final class CardStack {
     var onAction: ((String, CardAction) -> Void)?
     private var cards: [String: Card] = [:]
+    /// Card ids top to bottom. A card keeps its slot while it stays; new cards go on top.
+    private var order: [String] = []
     private let gap: CGFloat = 6
 
     /// Lays the cards out upward from `baseY`, centered on the pet and kept on screen.
@@ -28,10 +30,13 @@ final class CardStack {
             card.close()
             cards[id] = nil
         }
+        let kept = order.filter(ids.contains)
+        order = items.map(\.id).filter { !kept.contains($0) } + kept
+        let byId = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
 
         let visible = pet.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
         var y = baseY
-        for item in items.reversed() {
+        for item in order.reversed().compactMap({ byId[$0] }) {
             let card = cards[item.id] ?? makeCard(item.id)
             card.configure(item)
             let size = card.panel.frame.size

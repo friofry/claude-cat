@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let listeners = ListenerRegistry()
     private let board = Board()
     private let desktop = DesktopSessionIndex()
+    private let live = LiveSessionPoller()
     private let preferences = Preferences()
     private var watcher: DirectoryWatcher?
 
@@ -49,11 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         composer.onClose = { [weak self] in self?.hoverChanged() }
         walker.onStep = { [weak self] in self?.layout() }
         walker.onChange = { [weak self] in self?.updatePet() }
+        live.onUpdate = { [weak self] in self?.reload() }
 
         store.createDirectory()
-        records = store.loadAll(now: now)
+        records = loadRecords()
         for r in records { seen[r.id] = r.stateKey }
         render()
+        live.start(every: 5)
 
         watcher = DirectoryWatcher(store.directory) { [weak self] in self?.reload() }
         // Cards expire, the pet falls asleep and strolls with time, not only with file changes.
@@ -70,8 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - State
 
+    /// Hook records reconciled with the CLI's live session list.
+    private func loadRecords() -> [SessionRecord] {
+        LiveSessions.merge(store.loadAll(now: now), live: live.sessions, takenAt: live.takenAt)
+    }
+
     private func reload() {
-        records = store.loadAll(now: now)
+        records = loadRecords()
         for r in records where seen[r.id] != r.stateKey {
             seen[r.id] = r.stateKey
             if r.state == .done { happyUntil = now + happyDuration }
@@ -103,9 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let frame = pet.panel.frame
         let visible = pet.panel.screen?.visibleFrame ?? .zero
-        let extras = [toolbar.isShown ? Toolbar.size : nil, composer.isOpen ? Composer.size : nil].compactMap { $0 }
-        let needed = extras.reduce(0) { $0 + $1.height + 4 }
-        let below = frame.minY - visible.minY >= needed + 4
+        let below = frame.minY - visible.minY >= Toolbar.size.height + Composer.size.height + 12
         var aboveY = frame.maxY + 2
         var belowY = frame.minY - 2
         func origin(for size: NSSize) -> NSPoint {
@@ -118,7 +124,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer { aboveY += size.height + 4 }
             return NSPoint(x: x, y: aboveY)
         }
-        if toolbar.isShown { toolbar.show(at: origin(for: Toolbar.size), parent: pet.panel) }
+        // The toolbar's slot is kept even while it is hidden, so hovering the pet never moves the cards.
+        let toolbarOrigin = origin(for: Toolbar.size)
+        if toolbar.isShown { toolbar.show(at: toolbarOrigin, parent: pet.panel) }
         if composer.isOpen { composer.place(at: origin(for: Composer.size)) }
 
         let items = hidden ? [] : boardCards.map { card in
@@ -221,11 +229,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Opens the session in Claude Desktop, or brings Claude forward for sessions outside it.
+    /// Its card stays; only × hides a card.
     private func openSession(_ id: String?) {
-        if let id, let record = records.first(where: { $0.id == id }), record.state == .done {
-            dismissed[id] = record.stateKey
-            render()
-        }
         let desktop = self.desktop
         let bundleId = claudeBundleId
         // The lookup reads Claude Desktop's session files, so it stays off the main thread.
