@@ -45,12 +45,13 @@ The interface is in Russian; every string lives in `Sources/ClaudeCat/Strings.sw
 Requires macOS 13+ and Xcode or the Swift toolchain.
 
 ```bash
-./install.sh           # build, copy to ~/Applications, register hooks, launch
-./install.sh --login   # same, and start at login
-./uninstall.sh         # remove the app, LaunchAgent, hooks and state
+./run.sh --install           # build, copy to ~/Applications, register hooks, launch
+./run.sh --install --login   # same, and start at login
+./run.sh --uninstall         # remove the app, LaunchAgent, hooks and state
+./run.sh                     # build and launch from build/, for development
 ```
 
-`install.sh` backs up `~/.claude/settings.json` to `settings.json.bak-claude-cat` before adding the hooks,
+`--install` backs up `~/.claude/settings.json` to `settings.json.bak-claude-cat` before adding the hooks,
 and running it again replaces ClaudeCat's hooks instead of duplicating them. Claude Code picks up the
 hooks in running sessions too.
 
