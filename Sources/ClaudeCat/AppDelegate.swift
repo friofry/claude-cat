@@ -221,11 +221,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Opens the session in Claude Desktop, or brings Claude forward for sessions outside it.
+    /// Its card stays; only × hides a card.
     private func openSession(_ id: String?) {
-        if let id, let record = records.first(where: { $0.id == id }), record.state == .done {
-            dismissed[id] = record.stateKey
-            render()
-        }
         let desktop = self.desktop
         let bundleId = claudeBundleId
         // The lookup reads Claude Desktop's session files, so it stays off the main thread.
