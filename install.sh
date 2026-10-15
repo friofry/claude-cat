@@ -20,9 +20,11 @@ cp -R build/ClaudeCat.app "$DEST"
 cp "$SETTINGS" "$SETTINGS.bak-claude-cat"
 tmp=$(mktemp)
 jq --arg cmd "$HOOK" '
+  # Stop also starts the reply listener, which wakes a finished session with a reply sent from ClaudeCat.
   def entry($ev):
     (if ($ev | IN("PreToolUse", "PostToolUse", "PermissionRequest", "Notification")) then {matcher: "*"} else {} end)
-    + {hooks: [{type: "command", command: $cmd, timeout: 5}]};
+    + {hooks: ([{type: "command", command: $cmd, timeout: 5}]
+        + (if $ev == "Stop" then [{type: "command", command: ($cmd + " listen"), asyncRewake: true, timeout: 21600}] else [] end))};
   .hooks = (.hooks // {})
   | reduce ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
             "PermissionRequest", "Notification", "Stop", "SessionEnd") as $ev (.;

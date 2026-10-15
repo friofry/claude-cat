@@ -35,21 +35,24 @@ public struct SessionRecord: Codable, Equatable, Sendable {
     public var activity: Activity?
     public var waitReason: WaitReason?
     public var reply: String?
+    /// The session's working directory, used as the folder for a new chat.
+    public var cwd: String?
     public var updated: Double
 
     public init(id: String, state: SessionState, title: String? = nil, activity: Activity? = nil,
-                waitReason: WaitReason? = nil, reply: String? = nil, updated: Double) {
+                waitReason: WaitReason? = nil, reply: String? = nil, cwd: String? = nil, updated: Double) {
         self.id = id
         self.state = state
         self.title = title
         self.activity = activity
         self.waitReason = waitReason
         self.reply = reply
+        self.cwd = cwd
         self.updated = updated
     }
 
     enum CodingKeys: String, CodingKey {
-        case state, title, activity, waitReason, reply, updated
+        case state, title, activity, waitReason, reply, cwd, updated
     }
 
     /// Changes when the session enters a new state or event, but not on every tool call while working.

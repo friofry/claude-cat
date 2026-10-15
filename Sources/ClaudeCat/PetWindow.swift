@@ -5,13 +5,45 @@ extension NSPanel {
     static func overlay(size: NSSize = .zero) -> NSPanel {
         let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        // An accessory app is never active, so a panel that hides on deactivate would never show.
-        panel.hidesOnDeactivate = false
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        panel.configureAsOverlay()
         return panel
+    }
+
+    func configureAsOverlay() {
+        isOpaque = false
+        backgroundColor = .clear
+        // An accessory app is never active, so a panel that hides on deactivate would never show.
+        hidesOnDeactivate = false
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+    }
+}
+
+/// A pill-shaped frosted background, the look shared by cards, the toolbar and the composer.
+final class PillView: NSVisualEffectView {
+    var radius: CGFloat = 22 { didSet { updateMask() } }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        material = .popover
+        blendingMode = .behindWindow
+        state = .active
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        updateMask()
+    }
+
+    private func updateMask() {
+        let r = min(radius, bounds.height / 2)
+        maskImage = NSImage(size: bounds.size, flipped: false) { rect in
+            NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
+            return true
+        }
+        window?.invalidateShadow()
     }
 }
 

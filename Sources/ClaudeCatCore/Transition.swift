@@ -65,6 +65,7 @@ public enum Transition {
             let folder = input.cwd.map { URL(fileURLWithPath: $0).lastPathComponent }
             record.title = transcriptTitle() ?? record.title ?? folder
         }
+        record.cwd = input.cwd ?? record.cwd
         record.updated = now
         return .write(record)
     }

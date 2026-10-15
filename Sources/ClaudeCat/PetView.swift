@@ -22,11 +22,13 @@ final class PetView: NSView {
     var skin: PetSkin = Skins.all[0]
     var pixel: CGFloat = 3.5
     var mode: PetMode = .sleeping
+    var facingLeft = false
     var tick = 0 { didSet { needsDisplay = true } }
 
     var onClick: (() -> Void)?
     var onMoved: (() -> Void)?
     var onMenu: ((NSEvent) -> Void)?
+    var onHover: ((Bool) -> Void)?
 
     private var dragStart = NSPoint.zero
     private var windowStart = NSPoint.zero
@@ -39,21 +41,31 @@ final class PetView: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        Self.drawGrid(skin.frame(mode: mode, tick: tick), pixel: pixel)
+        Self.drawGrid(skin.frame(mode: mode, tick: tick), pixel: pixel, mirrored: facingLeft)
     }
 
-    static func drawGrid(_ grid: Grid, pixel: CGFloat, origin: NSPoint = .zero) {
+    static func drawGrid(_ grid: Grid, pixel: CGFloat, origin: NSPoint = .zero, mirrored: Bool = false) {
         NSGraphicsContext.current?.shouldAntialias = false
         for (r, row) in grid.enumerated() {
             for (c, ch) in row.enumerated() {
                 guard let ch, let color = palette[ch] else { continue }
                 color.setFill()
-                NSRect(x: origin.x + CGFloat(c) * pixel, y: origin.y + CGFloat(r) * pixel, width: pixel, height: pixel).fill()
+                let col = mirrored ? row.count - 1 - c : c
+                NSRect(x: origin.x + CGFloat(col) * pixel, y: origin.y + CGFloat(r) * pixel, width: pixel, height: pixel).fill()
             }
         }
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHover?(true) }
+    override func mouseExited(with event: NSEvent) { onHover?(false) }
 
     override func mouseDown(with event: NSEvent) {
         dragStart = NSEvent.mouseLocation

@@ -1,7 +1,8 @@
 import Foundation
 
+/// What the pet shows. `walking` is never chosen by `Board`; the app uses it while the pet strolls.
 public enum PetMode: CaseIterable, Sendable {
-    case idle, working, waiting, happy, sleeping
+    case idle, working, waiting, happy, sleeping, walking
 }
 
 public struct BoardCard: Equatable, Sendable {

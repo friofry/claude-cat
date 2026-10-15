@@ -14,6 +14,11 @@ struct Preferences {
         nonmutating set { defaults.set(Double(newValue), forKey: "pixel") }
     }
 
+    var cardsHidden: Bool {
+        get { defaults.bool(forKey: "cardsHidden") }
+        nonmutating set { defaults.set(newValue, forKey: "cardsHidden") }
+    }
+
     /// The saved bottom-center of the pet, if it is still on a connected screen.
     var anchor: NSPoint? {
         get {

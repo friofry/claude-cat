@@ -23,16 +23,20 @@ public enum Skins {
 
     public static func look(_ mode: PetMode, _ tick: Int) -> Look {
         switch mode {
-        case .idle, .working: return tick % 48 == 0 ? .blink : .open
+        case .idle, .working, .walking: return tick % 48 == 0 ? .blink : .open
         case .waiting: return .wide
         case .happy: return .happy
         case .sleeping: return .closed
         }
     }
 
-    /// A short hop every 1.5 s while waiting.
+    /// A short hop every 1.5 s while waiting, a bob on every other frame while walking.
     public static func hop(_ mode: PetMode, _ tick: Int) -> Int {
-        mode == .waiting && tick % 12 < 2 ? -1 : 0
+        switch mode {
+        case .waiting: return tick % 12 < 2 ? -1 : 0
+        case .walking: return tick % 2 == 0 ? -1 : 0
+        default: return 0
+        }
     }
 }
 
@@ -99,7 +103,7 @@ public struct Canvas {
             } else {
                 put(0, 1, "y"); put(width - 3, 3, "y")
             }
-        case .idle, .working:
+        case .idle, .working, .walking:
             break
         }
     }
@@ -151,6 +155,7 @@ public struct CatSkin: PetSkin {
         switch mode {
         case .working: tail = Self.tailUp
         case .waiting, .happy: tail = tick % 8 < 4 ? Self.tailUp : Self.tailDown
+        case .walking: tail = tick % 4 < 2 ? Self.tailUp : Self.tailDown
         case .idle: tail = tick % 64 < 3 ? Self.tailDown : Self.tailUp
         case .sleeping: tail = Self.tailDown
         }
@@ -158,9 +163,10 @@ public struct CatSkin: PetSkin {
         c.stamp(Self.body, col: 0, row: top) { $0 == "E" ? "o" : $0 }
         c.eyes([4, 14], row: top + 8, look: Skins.look(mode, tick), ink: "k", shine: true)
 
-        if mode == .working {
-            // Paws take turns tapping, twice a second.
-            let raised = tick % 8 < 4 ? 3 : 13
+        if mode == .working || mode == .walking {
+            // Paws take turns: tapping twice a second while working, stepping on every frame while walking.
+            let left = mode == .walking ? tick % 2 == 0 : tick % 8 < 4
+            let raised = left ? 3 : 13
             c.stamp(["kPPk"], col: raised, row: top + 17)
             c.put(raised + 1, top + 18, "o")
             c.put(raised + 2, top + 18, "o")
@@ -204,9 +210,10 @@ public struct ClawdSkin: PetSkin {
         c.eyes([x + 5, x + 13], row: top + 2, look: Skins.look(mode, tick), ink: "e", shine: false)
 
         // Arms: rows 5-6 at rest; one lifts at a time while working, both wave when happy.
-        let half = tick % 8 < 4
-        let leftUp = (mode == .working && half) || mode == .happy
-        let rightUp = (mode == .working && !half) || mode == .happy
+        let stepping = mode == .working || mode == .walking
+        let half = mode == .walking ? tick % 2 == 0 : tick % 8 < 4
+        let leftUp = (stepping && half) || mode == .happy
+        let rightUp = (stepping && !half) || mode == .happy
         let wave = mode == .happy && half ? 1 : 0
         for (col, up) in [(x + 1, leftUp), (x + 18, rightUp)] {
             // A raised arm reaches down to the shoulder at row 5 so it stays attached.
@@ -214,9 +221,9 @@ public struct ClawdSkin: PetSkin {
             for row in rows { c.put(col, row, "o") }
         }
 
-        // Legs: marching in place while working.
+        // Legs march while working or walking.
         for (i, col) in [x + 4, x + 6, x + 13, x + 15].enumerated() {
-            let lifted = mode == .working && (i % 2 == 0) == half
+            let lifted = stepping && (i % 2 == 0) == half
             c.put(col, top + 9, "d")
             if !lifted { c.put(col, top + 10, "d") }
         }

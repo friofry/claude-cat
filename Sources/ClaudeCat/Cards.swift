@@ -2,7 +2,7 @@ import AppKit
 import ClaudeCatCore
 import QuartzCore
 
-/// One session card: title, a live subtitle, and hover buttons to dismiss or open.
+/// One session card: title, a live subtitle, and hover buttons.
 struct CardItem: Equatable {
     let id: String
     let kind: BoardCard.Kind
@@ -10,15 +10,19 @@ struct CardItem: Equatable {
     let subtitle: String
 }
 
+enum CardAction {
+    case open, reply, stop, dismiss
+}
+
 /// Cards stacked above the pet, most urgent on top, like the Codex pet's chat stack.
 @MainActor
 final class CardStack {
-    var onOpen: ((String) -> Void)?
-    var onDismiss: ((String) -> Void)?
+    var onAction: ((String, CardAction) -> Void)?
     private var cards: [String: Card] = [:]
     private let gap: CGFloat = 6
 
-    func update(_ items: [CardItem], above pet: NSWindow) {
+    /// Lays the cards out upward from `baseY`, centered on the pet and kept on screen.
+    func update(_ items: [CardItem], over pet: NSWindow, baseY: CGFloat) {
         let ids = Set(items.map(\.id))
         for (id, card) in cards where !ids.contains(id) {
             card.close()
@@ -26,13 +30,12 @@ final class CardStack {
         }
 
         let visible = pet.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        var y = pet.frame.maxY + 2
+        var y = baseY
         for item in items.reversed() {
             let card = cards[item.id] ?? makeCard(item.id)
             card.configure(item)
             let size = card.panel.frame.size
-            var x = pet.frame.midX - size.width / 2
-            x = max(visible.minX + 4, min(x, visible.maxX - size.width - 4))
+            let x = max(visible.minX + 4, min(pet.frame.midX - size.width / 2, visible.maxX - size.width - 4))
             card.place(at: NSPoint(x: x, y: y - Card.margin), parent: pet)
             y += size.height - Card.margin * 2 + gap
         }
@@ -40,8 +43,7 @@ final class CardStack {
 
     private func makeCard(_ id: String) -> Card {
         let card = Card()
-        card.onOpen = { [weak self] in self?.onOpen?(id) }
-        card.onDismiss = { [weak self] in self?.onDismiss?(id) }
+        card.onAction = { [weak self] action in self?.onAction?(id, action) }
         cards[id] = card
         return card
     }
@@ -53,16 +55,15 @@ final class Card: NSObject {
     static let width: CGFloat = 300
 
     let panel: NSPanel
-    var onOpen: (() -> Void)?
-    var onDismiss: (() -> Void)?
+    var onAction: ((CardAction) -> Void)?
 
     private let root = HoverView()
-    private let effect = NSVisualEffectView()
+    private let pill = PillView()
     private let icon = NSImageView()
     private let title = NSTextField(labelWithString: "")
     private let subtitle = NSTextField(labelWithString: "")
     private let closeButton = CircleButton(symbol: "xmark", size: 20)
-    private let openButton = CircleButton(symbol: "arrow.turn.down.left", size: 30)
+    private var actionButtons: [CircleButton] = []
     private var item: CardItem?
     private var shown = false
 
@@ -74,11 +75,7 @@ final class Card: NSObject {
         super.init()
         panel.hasShadow = true
         panel.contentView = root
-
-        effect.material = .popover
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        root.addSubview(effect)
+        root.addSubview(pill)
 
         title.font = .boldSystemFont(ofSize: 13)
         title.textColor = .labelColor
@@ -87,23 +84,21 @@ final class Card: NSObject {
         for field in [title, subtitle] {
             field.lineBreakMode = .byTruncatingTail
             field.maximumNumberOfLines = 1
-            effect.addSubview(field)
+            pill.addSubview(field)
         }
         subtitle.wantsLayer = true
         icon.imageScaling = .scaleProportionallyUpOrDown
-        effect.addSubview(icon)
-        effect.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(clicked)))
+        pill.addSubview(icon)
+        pill.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(clicked)))
 
-        closeButton.action = { [weak self] in self?.onDismiss?() }
-        openButton.action = { [weak self] in self?.onOpen?() }
-        root.addSubview(openButton)
+        closeButton.action = { [weak self] in self?.onAction?(.dismiss) }
         root.addSubview(closeButton)
-        setButtonsVisible(false)
         root.onHover = { [weak self] inside in self?.setButtonsVisible(inside) }
     }
 
     func configure(_ new: CardItem) {
         guard new != item else { return }
+        let kindChanged = new.kind != item?.kind
         item = new
 
         let symbol: String?
@@ -122,6 +117,7 @@ final class Card: NSObject {
         icon.isHidden = symbol == nil
         title.stringValue = new.title
         subtitle.stringValue = new.subtitle
+        if kindChanged { rebuildActionButtons(for: new.kind) }
 
         let lineH = ceil(title.fittingSize.height)
         let subH = ceil(subtitle.fittingSize.height)
@@ -129,7 +125,7 @@ final class Card: NSObject {
         let m = Self.margin
         panel.setContentSize(NSSize(width: Self.width + m * 2, height: height + m * 2))
         root.frame = NSRect(x: 0, y: 0, width: Self.width + m * 2, height: height + m * 2)
-        effect.frame = NSRect(x: m, y: m, width: Self.width, height: height)
+        pill.frame = NSRect(x: m, y: m, width: Self.width, height: height)
 
         let titleY = height - padV - lineH
         let textX = symbol == nil ? padH : padH + iconSize + 6
@@ -138,15 +134,14 @@ final class Card: NSObject {
         subtitle.frame = NSRect(x: padH, y: padV, width: Self.width - padH * 2, height: subH)
 
         closeButton.setFrameOrigin(NSPoint(x: m - 7, y: m + height - 13))
-        openButton.setFrameOrigin(NSPoint(x: m + Self.width - 30 - 10, y: m + (height - 30) / 2))
-
-        let radius = min(22, height / 2)
-        effect.maskImage = NSImage(size: effect.frame.size, flipped: false) { rect in
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            return true
+        var x = m + Self.width - 10
+        for button in actionButtons.reversed() {
+            x -= button.frame.width
+            button.setFrameOrigin(NSPoint(x: x, y: m + (height - button.frame.height) / 2))
+            x -= 6
         }
-        panel.invalidateShadow()
         setShimmer(new.kind == .working)
+        panel.invalidateShadow()
     }
 
     func place(at origin: NSPoint, parent: NSWindow) {
@@ -161,9 +156,11 @@ final class Card: NSObject {
                 panel.animator().alphaValue = 1
             }
         } else if panel.frame.origin != origin {
+            // Only setFrame(_:display:) animates through a window's animator.
+            let frame = NSRect(origin: origin, size: panel.frame.size)
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.2
-                panel.animator().setFrameOrigin(origin)
+                panel.animator().setFrame(frame, display: true)
             }
         }
     }
@@ -181,9 +178,27 @@ final class Card: NSObject {
         })
     }
 
+    /// Working: message and stop. Finished: reply. Waiting: open the session to answer there.
+    private func rebuildActionButtons(for kind: BoardCard.Kind) {
+        actionButtons.forEach { $0.removeFromSuperview() }
+        let specs: [(String, CardAction)]
+        switch kind {
+        case .working: specs = [("text.bubble", .reply), ("stop.fill", .stop)]
+        case .done: specs = [("arrow.turn.down.left", .reply)]
+        case .waiting: specs = [("arrow.up.forward", .open)]
+        }
+        actionButtons = specs.map { symbol, action in
+            let button = CircleButton(symbol: symbol, size: 30)
+            button.action = { [weak self] in self?.onAction?(action) }
+            root.addSubview(button)
+            return button
+        }
+        setButtonsVisible(false)
+    }
+
     private func setButtonsVisible(_ visible: Bool) {
         closeButton.isHidden = !visible
-        openButton.isHidden = !visible
+        actionButtons.forEach { $0.isHidden = !visible }
     }
 
     /// A soft highlight sweeping across the subtitle while the session works.
@@ -207,7 +222,7 @@ final class Card: NSObject {
     }
 
     @objc private func clicked() {
-        onOpen?()
+        onAction?(.open)
     }
 }
 
@@ -224,29 +239,45 @@ final class HoverView: NSView {
     override func mouseExited(with event: NSEvent) { onHover?(false) }
 }
 
+/// A round icon button; `filled` draws its own disc, otherwise it sits on a pill.
 final class CircleButton: NSView {
     var action: (() -> Void)?
-    private let symbol: String
+    var symbol: String { didSet { needsDisplay = true } }
+    var badge = 0 { didSet { needsDisplay = true } }
+    private let filled: Bool
 
-    init(symbol: String, size: CGFloat) {
+    init(symbol: String, size: CGFloat, filled: Bool = true) {
         self.symbol = symbol
+        self.filled = filled
         super.init(frame: NSRect(x: 0, y: 0, width: size, height: size))
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override func draw(_ dirtyRect: NSRect) {
-        let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1))
-        NSColor.windowBackgroundColor.withAlphaComponent(0.95).setFill()
-        circle.fill()
-        NSColor.separatorColor.setStroke()
-        circle.lineWidth = 0.5
-        circle.stroke()
+        if filled {
+            let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1))
+            NSColor.windowBackgroundColor.withAlphaComponent(0.95).setFill()
+            circle.fill()
+            NSColor.separatorColor.setStroke()
+            circle.lineWidth = 0.5
+            circle.stroke()
+        }
         let config = NSImage.SymbolConfiguration(pointSize: bounds.width * 0.42, weight: .bold)
-            .applying(.init(paletteColors: [.secondaryLabelColor]))
-        guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config) else { return }
-        let s = image.size
-        image.draw(in: NSRect(x: (bounds.width - s.width) / 2, y: (bounds.height - s.height) / 2, width: s.width, height: s.height))
+            .applying(.init(paletteColors: [filled ? .secondaryLabelColor : .labelColor]))
+        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config) {
+            let s = image.size
+            image.draw(in: NSRect(x: (bounds.width - s.width) / 2, y: (bounds.height - s.height) / 2, width: s.width, height: s.height))
+        }
+        if badge > 0 {
+            let text = NSAttributedString(string: "\(badge)", attributes: [
+                .font: NSFont.boldSystemFont(ofSize: 9), .foregroundColor: NSColor.white])
+            let d = max(13, text.size().width + 6)
+            let dot = NSRect(x: bounds.width - d, y: bounds.height - 13, width: d, height: 13)
+            NSColor.systemOrange.setFill()
+            NSBezierPath(roundedRect: dot, xRadius: 6.5, yRadius: 6.5).fill()
+            text.draw(at: NSPoint(x: dot.midX - text.size().width / 2, y: dot.midY - text.size().height / 2))
+        }
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }

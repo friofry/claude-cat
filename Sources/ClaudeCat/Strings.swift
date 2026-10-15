@@ -7,8 +7,14 @@ enum Strings {
         record.title ?? "Claude"
     }
 
-    static func subtitle(_ card: BoardCard) -> String {
+    /// `pending` is what the user already sent to the session from ClaudeCat.
+    static func subtitle(_ card: BoardCard, pending: InboxItem? = nil) -> String {
         let record = card.record
+        switch pending {
+        case .stop?: return "Остановится на следующем шаге…"
+        case .message?: return "Сообщение дойдёт на следующем шаге…"
+        case nil: break
+        }
         switch card.kind {
         case .waiting: return record.waitReason.map(wait) ?? "Claude ждёт тебя"
         case .done: return nonEmpty(record.reply) ?? "Готово"
@@ -54,6 +60,14 @@ enum Strings {
     }
 
     static let sizes: [(name: String, pixel: CGFloat)] = [("Маленький", 3), ("Средний", 3.5), ("Большой", 5)]
+
+    enum Composer {
+        static let newChat = "Новый чат: опиши задачу"
+        static func message(_ title: String) -> String { "Сообщение для «\(title)»" }
+        static func reply(_ title: String) -> String { "Ответить в «\(title)»" }
+        static let sent = "Отправлено"
+        static let copied = "Текст в буфере обмена — вставь его в сессию"
+    }
 
     enum Menu {
         static let noSessions = "Нет активных сессий"
